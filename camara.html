@@ -1,9 +1,63 @@
-<!doctype html><html lang="es"><meta charset="utf-8"><style>body{font:16px system-ui;color:#64748b;margin:8px}button{padding:10px 18px;margin:4px;border:1px solid #94a3b8;border-radius:8px;cursor:pointer}canvas{width:100%;max-width:640px;background:#18202a;border-radius:10px;display:block}video{display:none}</style><button id="start">Encender cámara</button><button id="stop">Apagar cámara</button><p id="status" role="status">Cámara apagada</p><video id="video" autoplay playsinline muted></video><canvas id="canvas" width="640" height="480"></canvas><script type="module">
-import {FaceDetector, FilesetResolver} from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm';
-const v=document.getElementById('video'), c=document.getElementById('canvas'), ctx=c.getContext('2d'), status=document.getElementById('status'), start=document.getElementById('start');
-let detector,stream,raf,running=false,last=-1, generation=0;
-function stop(){generation++;running=false;cancelAnimationFrame(raf);stream?.getTracks().forEach(t=>t.stop());stream=null;v.srcObject=null;ctx.clearRect(0,0,c.width,c.height);status.textContent='Cámara apagada';start.disabled=false;}
-document.getElementById('stop').onclick=stop;window.addEventListener('pagehide',stop);
-start.onclick=async()=>{const token=++generation;start.disabled=true;try{status.textContent='Cargando detector...';if(!detector){const files=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');detector=await FaceDetector.createFromOptions(files,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite'},runningMode:'VIDEO',minDetectionConfidence:0.6});}if(token!==generation)return;const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480}},audio:false});if(token!==generation){s.getTracks().forEach(t=>t.stop());return;}stream=s;v.srcObject=s;await v.play();if(token!==generation)return;c.width=v.videoWidth;c.height=v.videoHeight;running=true;last=-1;status.textContent='Cámara activa';loop();}catch(e){stop();status.textContent='Error: '+e.message;}};
-function loop(){if(!running)return;try{if(v.readyState>=2&&v.currentTime!==last){last=v.currentTime;ctx.drawImage(v,0,0,c.width,c.height);const result=detector.detectForVideo(v,performance.now());for(const d of result.detections){const b=d.boundingBox,score=d.categories[0].score;ctx.strokeStyle=score>=.85?'#438bff':'#ff78b9';ctx.lineWidth=3;ctx.strokeRect(b.originX,b.originY,b.width,b.height);ctx.fillStyle=ctx.strokeStyle;ctx.font='bold 18px sans-serif';ctx.fillText('Rostro '+(score*100).toFixed(1)+'%',Math.max(0,b.originX),Math.max(20,b.originY-6));}status.textContent='Rostros: '+result.detections.length+' | Azul: confianza alta; rosado: moderada';}raf=requestAnimationFrame(loop);}catch(e){stop();status.textContent='Error: '+e.message;}}
-</script></html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        video {
+            width: 100%;
+            max-width: 640px;
+            background: #18202a;
+            border-radius: 10px;
+        }
+        button {
+            padding: 12px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <button onclick="encender()">Encender cámara</button>
+    <button onclick="apagar()">Apagar cámara</button>
+
+    <p id="estado">Cámara apagada</p>
+
+    <video id="video" autoplay playsinline muted></video>
+
+    <script>
+        let stream;
+        const video = document.getElementById("video");
+        const estado = document.getElementById("estado");
+
+        async function encender() {
+            try {
+                estado.textContent = "Solicitando permisos...";
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: false
+                });
+
+                video.srcObject = stream;
+                await video.play();
+
+                estado.textContent = "Cámara activa";
+
+            } catch (error) {
+                estado.textContent =
+                    error.name + ": " + error.message;
+            }
+        }
+
+        function apagar() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+
+            video.srcObject = null;
+            estado.textContent = "Cámara apagada";
+        }
+    </script>
+
+</body>
+</html>
