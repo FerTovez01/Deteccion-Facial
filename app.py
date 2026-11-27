@@ -339,3 +339,42 @@ st.divider()
 st.caption(
     "Proyecto académico de Inteligencia Artificial"
 )
+
+st.divider()
+st.header("Predicciones de MobileNetV2")
+
+resultados = pd.read_csv(BASE / "predicciones.csv")
+
+indice = st.selectbox(
+    "Seleccionar registro de prueba",
+    range(len(resultados))
+)
+
+fila = resultados.iloc[indice]
+
+color = (
+    "#2563eb"
+    if fila["Prediccion"] == "man"
+    else "#ec4899"
+)
+
+st.markdown(
+    f"""
+    <div style="border: 3px solid {color};
+                padding: 20px;
+                border-radius: 12px;
+                color: {color};">
+        <h2>{fila['Prediccion'].upper()}</h2>
+        <h3>Confianza: {fila['Confianza']:.2%}</h3>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.write("Etiqueta del dataset:", fila["Etiqueta"])
+
+st.write("🔵 Probabilidad Man")
+st.progress(float(fila["Probabilidad_Man"]))
+
+st.write("🩷 Probabilidad Woman")
+st.progress(float(fila["Probabilidad_Woman"]))
