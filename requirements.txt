@@ -1,9 +1,7 @@
 streamlit
-opencv-python-headless
-streamlit-webrtc
-av
 numpy
 tensorflow-cpu
 Pillow
 datasets
 scikit-learn
+
