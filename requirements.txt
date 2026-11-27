@@ -5,3 +5,5 @@ av
 numpy
 tensorflow-cpu
 Pillow
+datasets
+scikit-learn
