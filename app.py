@@ -3,161 +3,78 @@ import cv2
 import av
 import urllib.request
 from pathlib import Path
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
 import threading
+import numpy as np
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
 
-# Configuración de la página
-st.set_page_config(
-    page_title="Detección facial",
-    page_icon="📷",
-    layout="wide"
-)
+st.set_page_config(page_title='Detección facial', page_icon='📷', layout='wide')
+st.title('Detección y clasificación facial')
 
-st.title("Detección facial en tiempo real")
-st.caption("Python · OpenCV · YuNet")
-
-# Cargar modelo preentrenado
 @st.cache_resource
-def modelo():
-
-    ruta = Path("face_detection_yunet_2023mar.onnx")
-
+def cargar_detector():
+    ruta = Path('yunet.onnx')
     if not ruta.exists():
+        urllib.request.urlretrieve('https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx', ruta)
+    return cv2.FaceDetectorYN.create(str(ruta), '', (320,320), 0.6, 0.3, 5000), threading.Lock()
 
-        url = (
-            "https://media.githubusercontent.com/media/"
-            "opencv/opencv_zoo/main/models/"
-            "face_detection_yunet/"
-            "face_detection_yunet_2023mar.onnx"
-        )
-
-        urllib.request.urlretrieve(url, ruta)
-
-    detector = cv2.FaceDetectorYN.create(
-        str(ruta),
-        "",
-        (320, 320),
-        0.6,
-        0.3,
-        5000
-    )
-
-    return detector, threading.Lock()
-
-
-detector, lock = modelo()
-
-# Procesamiento de video
 def procesar(frame):
-
-    img = frame.to_ndarray(format="bgr24")
-
-    h, w = img.shape[:2]
-
+    img = frame.to_ndarray(format='bgr24')
+    detector, lock = cargar_detector()
+    h,w = img.shape[:2]
     with lock:
-        detector.setInputSize((w, h))
+        detector.setInputSize((w,h))
         _, rostros = detector.detect(img)
+    for f in ([] if rostros is None else rostros):
+        x,y,a,b = map(int,f[:4])
+        cv2.rectangle(img,(x,y),(x+a,y+b),(0,255,0),2)
+        cv2.putText(img,f'Rostro {f[-1]:.1%}',(max(0,x),max(20,y-8)),cv2.FONT_HERSHEY_SIMPLEX,.6,(0,255,0),2)
+    return av.VideoFrame.from_ndarray(img,format='bgr24')
 
-    total = 0 if rostros is None else len(rostros)
+@st.cache_resource
+def cargar_modelo():
+    import tensorflow as tf
+    return tf.keras.models.load_model('modelo_genero.keras',compile=False)
 
-    if rostros is not None:
+@st.cache_data
+def prueba():
+    from datasets import load_dataset
+    from sklearn.model_selection import train_test_split
+    ds = load_dataset('HuggingFaceM4/FairFace','0.25',split='validation',streaming=True).shuffle(seed=42,buffer_size=1000)
+    X,y = [],[]
+    for fila in ds:
+        if fila['age'] < 3: continue
+        X.append(np.asarray(fila['image'].convert('RGB').resize((224,224))))
+        y.append(fila['gender'])
+        if len(y)==800: break
+    _, X_test, _, y_test = train_test_split(np.array(X),np.array(y),test_size=.5,random_state=42,stratify=y)
+    return X_test,y_test
 
-        for rostro in rostros:
-
-            x, y, a, b = map(int, rostro[:4])
-
-            confianza = float(rostro[-1])
-
-            # Azul: confianza alta
-            # Rosado: confianza moderada
-            color = (
-                (255, 0, 0)
-                if confianza >= 0.85
-                else (180, 105, 255)
-            )
-
-            cv2.rectangle(
-                img,
-                (x, y),
-                (x + a, y + b),
-                color,
-                2
-            )
-
-            cv2.putText(
-                img,
-                f"Rostro {confianza:.1%}",
-                (max(0, x), max(20, y - 8)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                color,
-                2
-            )
-
-    cv2.putText(
-        img,
-        f"Rostros: {total}",
-        (10, 25),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (0, 255, 0),
-        2
-    )
-
-    return av.VideoFrame.from_ndarray(
-        img,
-        format="bgr24"
-    )
-
-
-# Configuración de servidores STUN
-RTC_CONFIGURATION = {
-    "iceServers": [
-        {
-            "urls": [
-                "stun:stun.l.google.com:19302",
-                "stun:stun1.l.google.com:19302",
-                "stun:stun2.l.google.com:19302"
-            ]
-        }
-    ]
-}
-
-# Cámara en tiempo real
-st.subheader("Cámara en vivo")
-
-webrtc_streamer(
-    key="deteccion-facial",
-    mode=WebRtcMode.SENDRECV,
-    rtc_configuration=RTC_CONFIGURATION,
-    video_frame_callback=procesar,
-    media_stream_constraints={
-        "video": {
-            "width": {"ideal": 640},
-            "height": {"ideal": 480},
-            "frameRate": {"ideal": 15}
-        },
-        "audio": False
-    },
-    async_processing=True
-)
-
-# Información del modelo
-st.divider()
-
-st.subheader("Interpretación de resultados")
-
-st.markdown("""
-- 🔵 Azul: confianza facial igual o superior al 85%.
-- 🩷 Rosado: confianza facial entre 60% y 85%.
-- 🟢 Contador de rostros detectados.
-""")
-
-st.info(
-    "Modelo YuNet preentrenado. "
-    "Detección facial mediante OpenCV."
-)
-
-st.write('Azul: confianza ≥ 85 %. Rosado: confianza entre 60 % y 85 %.')
-webrtc_streamer(key='yunet', mode=WebRtcMode.SENDRECV, video_frame_callback=procesar, media_stream_constraints={'video':True,'audio':False}, rtc_configuration={'iceServers':[{'urls':['stun:stun.l.google.com:19302']}]}, async_processing=True)
-st.caption('La confianza facial no equivale al Accuracy ni determina el género. No se guardan imágenes en la aplicación.')
+camara, evaluacion = st.tabs(['Cámara en vivo','Evaluación FairFace'])
+with camara:
+    st.caption('YuNet: detección facial, sin clasificación de género en cámara.')
+    cargar_detector()
+    webrtc_streamer(key='camara',mode=WebRtcMode.SENDRECV,rtc_configuration={'iceServers':[{'urls':['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]},video_frame_callback=procesar,media_stream_constraints={'video':True,'audio':False},async_processing=True)
+with evaluacion:
+    st.caption('Predicciones de etiquetas del dataset, no determinación de identidad de género.')
+    if st.button('Evaluar modelo'):
+        try:
+            from sklearn.metrics import confusion_matrix, accuracy_score
+            with st.spinner('Cargando conjunto de prueba y evaluando...'):
+                X,y = prueba()
+                p = cargar_modelo().predict(X,batch_size=32,verbose=0)
+                pred = p.argmax(axis=1)
+            st.session_state['resultado'] = (y,p,pred)
+        except Exception as e:
+            st.error(str(e))
+    if 'resultado' in st.session_state:
+        from sklearn.metrics import confusion_matrix, accuracy_score
+        y,p,pred = st.session_state['resultado']
+        st.metric('Accuracy de prueba',f'{accuracy_score(y,pred):.2%}')
+        st.write('Matriz de confusión (filas reales, columnas predichas; orden Male, Female)')
+        st.dataframe(confusion_matrix(y,pred,labels=[0,1]))
+        i = st.slider('Muestra de prueba',0,len(y)-1,0)
+        etiqueta = ['Male','Female'][pred[i]]
+        color = '#2563eb' if pred[i]==0 else '#db2777'
+        st.markdown(f'<div style="border:3px solid {color};padding:12px;color:{color}">{etiqueta}: {p[i,pred[i]]:.1%}</div>',unsafe_allow_html=True)
+        st.write(f'Male: {p[i,0]:.1%} | Female: {p[i,1]:.1%}')
+        st.write('Etiqueta original:', ['Male','Female'][y[i]])
