@@ -1,7 +1,7 @@
-streamlit
-opencv-python-headless
+streamlit==1.45.1
 tensorflow-cpu
 numpy
 pandas
 matplotlib
+opencv-python-headless
 Pillow
