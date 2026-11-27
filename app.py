@@ -1,55 +1,341 @@
-import streamlit as st
-from pathlib import Path
-import numpy as np
-import streamlit.components.v1 as components
 
-st.set_page_config(page_title='Detección facial', page_icon='📷', layout='wide')
-st.title('Detección y clasificación facial')
+import streamlit as st
+import streamlit.components.v1 as components
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import json
+from pathlib import Path
+
+# ==========================================
+# CONFIGURACION DE LA PAGINA
+# ==========================================
+
+st.set_page_config(
+    page_title="Sistema de deteccion facial",
+    page_icon="📷",
+    layout="wide"
+)
+
+st.title("Sistema de detección facial")
+st.caption("Inteligencia Artificial | OpenCV | MobileNetV2")
+
+BASE = Path(__file__).resolve().parent
+
+# ==========================================
+# ESTILOS
+# ==========================================
+
+st.markdown("""
+<style>
+.stMetric {
+    background-color: rgba(128,128,128,0.08);
+    padding: 20px;
+    border-radius: 12px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# CARGAR METRICAS
+# ==========================================
+
+@st.cache_data
+def cargar_metricas():
+    with open(BASE / "metricas.json", encoding="utf-8") as archivo:
+        return json.load(archivo)
+
+try:
+    metricas = cargar_metricas()
+
+except Exception as error:
+    st.error(f"Error al cargar las métricas: {error}")
+    st.stop()
+
+# ==========================================
+# CARGAR MODELO
+# ==========================================
 
 @st.cache_resource
 def cargar_modelo():
-    import tensorflow as tf
-    return tf.keras.models.load_model('modelo_genero.keras',compile=False)
+    return tf.keras.models.load_model(
+        BASE / "modelo_men_women.keras",
+        compile=False
+    )
 
-@st.cache_data
-def prueba():
-    from datasets import load_dataset
-    from sklearn.model_selection import train_test_split
-    ds = load_dataset('HuggingFaceM4/FairFace','0.25',split='validation',streaming=True).shuffle(seed=42,buffer_size=1000)
-    X,y = [],[]
-    for fila in ds:
-        if fila['age'] < 3: continue
-        X.append(np.asarray(fila['image'].convert('RGB').resize((224,224))))
-        y.append(fila['gender'])
-        if len(y)==800: break
-    _, X_test, _, y_test = train_test_split(np.array(X),np.array(y),test_size=.5,random_state=42,stratify=y)
-    return X_test,y_test
+# ==========================================
+# INDICADORES PRINCIPALES
+# ==========================================
 
-camara, evaluacion = st.tabs(['Cámara en vivo','Evaluación FairFace'])
-with camara:
-    st.caption('Cámara procesada localmente en el navegador mediante MediaPipe. No utiliza WebRTC ni TURN.')
-    components.html(Path(__file__).with_name('camara.html').read_text(encoding='utf-8'), height=650)
-with evaluacion:
-    st.caption('Predicciones de etiquetas del dataset, no determinación de identidad de género.')
-    if st.button('Evaluar modelo'):
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric(
+    "Accuracy",
+    f"{metricas['accuracy'] * 100:.2f}%"
+)
+
+col2.metric(
+    "Imágenes evaluadas",
+    metricas["total_imagenes"]
+)
+
+col3.metric(
+    "Aciertos",
+    metricas["aciertos"]
+)
+
+col4.metric(
+    "Errores",
+    metricas["errores"]
+)
+
+st.divider()
+
+# ==========================================
+# PESTAÑAS
+# ==========================================
+
+tab1, tab2, tab3 = st.tabs([
+    "📷 Cámara en vivo",
+    "📊 Evaluación del modelo",
+    "🧠 Información del entrenamiento"
+])
+
+# ==========================================
+# CAMARA EN TIEMPO REAL
+# ==========================================
+
+with tab1:
+
+    st.subheader("Detección facial en tiempo real")
+
+    st.caption(
+        "Procesamiento de cámara mediante JavaScript "
+        "y MediaPipe, sin WebRTC ni TURN."
+    )
+
+    ruta_camara = BASE / "camara.html"
+
+    if ruta_camara.exists():
+
+        html = ruta_camara.read_text(
+            encoding="utf-8"
+        )
+
+        components.html(
+            html,
+            height=850,
+            scrolling=True
+        )
+
+    else:
+        st.error("No se encontró camara.html")
+
+# ==========================================
+# EVALUACION DEL MODELO
+# ==========================================
+
+with tab2:
+
+    st.subheader("Resultados de clasificación")
+
+    clases = metricas["clases"]
+
+    matriz = np.array(
+        metricas["matriz_confusion"]
+    )
+
+    izquierda, derecha = st.columns(2)
+
+    with izquierda:
+
+        st.markdown("### Matriz de confusión")
+
+        fig, ax = plt.subplots(figsize=(5, 4))
+
+        imagen = ax.imshow(
+            matriz,
+            cmap="Blues"
+        )
+
+        ax.set_xticks(range(len(clases)))
+        ax.set_yticks(range(len(clases)))
+
+        ax.set_xticklabels(clases)
+        ax.set_yticklabels(clases)
+
+        ax.set_xlabel("Predicción")
+        ax.set_ylabel("Etiqueta del dataset")
+
+        for i in range(len(clases)):
+            for j in range(len(clases)):
+
+                color = (
+                    "white"
+                    if matriz[i, j] > matriz.max() / 2
+                    else "black"
+                )
+
+                ax.text(
+                    j, i,
+                    matriz[i, j],
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontsize=15
+                )
+
+        fig.colorbar(imagen)
+        fig.tight_layout()
+
+        st.pyplot(fig)
+        plt.close(fig)
+
+    with derecha:
+
+        st.markdown("### Aciertos y errores")
+
+        fig2, ax2 = plt.subplots()
+
+        ax2.pie(
+            [
+                metricas["aciertos"],
+                metricas["errores"]
+            ],
+            labels=["Aciertos", "Errores"],
+            colors=["#22c55e", "#ef4444"],
+            autopct="%1.1f%%",
+            startangle=90
+        )
+
+        st.pyplot(fig2)
+        plt.close(fig2)
+
+    st.divider()
+
+    st.subheader("Reporte de clasificación")
+
+    reporte = pd.DataFrame(
+        metricas["reporte"]
+    ).transpose()
+
+    st.dataframe(
+        reporte.round(4),
+        use_container_width=True
+    )
+
+    st.subheader("Resultados por categoría")
+
+    for clase in clases:
+
+        datos = metricas["reporte"][clase]
+
+        color = (
+            "#2563eb"
+            if clase.lower() == "man"
+            else "#ec4899"
+        )
+
+        st.markdown(
+            f"<h3 style='color:{color}'>{clase}</h3>",
+            unsafe_allow_html=True
+        )
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "Precision",
+            f"{datos['precision'] * 100:.2f}%"
+        )
+
+        c2.metric(
+            "Recall",
+            f"{datos['recall'] * 100:.2f}%"
+        )
+
+        c3.metric(
+            "F1-score",
+            f"{datos['f1-score'] * 100:.2f}%"
+        )
+
+        st.progress(float(datos["recall"]))
+
+    st.caption(
+        "Las métricas representan la coincidencia "
+        "con las etiquetas del conjunto de prueba."
+    )
+
+# ==========================================
+# INFORMACION DEL ENTRENAMIENTO
+# ==========================================
+
+with tab3:
+
+    st.subheader("Arquitectura MobileNetV2")
+
+    informacion = {
+        "Característica": [
+            "Modelo",
+            "Dataset",
+            "Entrenamiento",
+            "Validación",
+            "Prueba",
+            "Épocas",
+            "Resolución",
+            "Batch size",
+            "Optimizador",
+            "Accuracy"
+        ],
+        "Valor": [
+            "MobileNetV2",
+            "men-women.zip",
+            "800 imágenes",
+            "400 imágenes",
+            "400 imágenes",
+            "4",
+            "224 x 224 x 3",
+            "32",
+            "Adam",
+            f"{metricas['accuracy'] * 100:.2f}%"
+        ]
+    }
+
+    st.dataframe(
+        pd.DataFrame(informacion),
+        hide_index=True,
+        use_container_width=True
+    )
+
+    if st.button("Verificar modelo entrenado"):
+
         try:
-            from sklearn.metrics import confusion_matrix, accuracy_score
-            with st.spinner('Cargando conjunto de prueba y evaluando...'):
-                X,y = prueba()
-                p = cargar_modelo().predict(X,batch_size=32,verbose=0)
-                pred = p.argmax(axis=1)
-            st.session_state['resultado'] = (y,p,pred)
-        except Exception as e:
-            st.error(str(e))
-    if 'resultado' in st.session_state:
-        from sklearn.metrics import confusion_matrix, accuracy_score
-        y,p,pred = st.session_state['resultado']
-        st.metric('Accuracy de prueba',f'{accuracy_score(y,pred):.2%}')
-        st.write('Matriz de confusión (filas reales, columnas predichas; orden Male, Female)')
-        st.dataframe(confusion_matrix(y,pred,labels=[0,1]))
-        i = st.slider('Muestra de prueba',0,len(y)-1,0)
-        etiqueta = ['Male','Female'][pred[i]]
-        color = '#2563eb' if pred[i]==0 else '#db2777'
-        st.markdown(f'<div style="border:3px solid {color};padding:12px;color:{color}">{etiqueta}: {p[i,pred[i]]:.1%}</div>',unsafe_allow_html=True)
-        st.write(f'Male: {p[i,0]:.1%} | Female: {p[i,1]:.1%}')
-        st.write('Etiqueta original:', ['Male','Female'][y[i]])
+            modelo = cargar_modelo()
+
+            st.success("Modelo cargado correctamente")
+
+            st.write("Entrada:", modelo.input_shape)
+            st.write("Salida:", modelo.output_shape)
+            st.write(
+                "Parámetros totales:",
+                modelo.count_params()
+            )
+
+        except Exception as error:
+            st.error(str(error))
+
+    ruta_modelo = BASE / "modelo_men_women.keras"
+
+    if ruta_modelo.exists():
+
+        st.download_button(
+            "Descargar modelo entrenado",
+            data=ruta_modelo.read_bytes(),
+            file_name="modelo_men_women.keras"
+        )
+
+st.divider()
+
+st.caption(
+    "Proyecto académico de Inteligencia Artificial"
+)
