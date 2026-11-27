@@ -1,0 +1,47 @@
+{
+    "accuracy": 0.88,
+    "total_imagenes": 400,
+    "aciertos": 352,
+    "errores": 48,
+    "matriz_confusion": [
+        [
+            163,
+            37
+        ],
+        [
+            11,
+            189
+        ]
+    ],
+    "clases": [
+        "man",
+        "woman"
+    ],
+    "reporte": {
+        "man": {
+            "precision": 0.9367816091954023,
+            "recall": 0.815,
+            "f1-score": 0.8716577540106952,
+            "support": 200.0
+        },
+        "woman": {
+            "precision": 0.8362831858407079,
+            "recall": 0.945,
+            "f1-score": 0.8873239436619719,
+            "support": 200.0
+        },
+        "accuracy": 0.88,
+        "macro avg": {
+            "precision": 0.8865323975180551,
+            "recall": 0.8799999999999999,
+            "f1-score": 0.8794908488363335,
+            "support": 400.0
+        },
+        "weighted avg": {
+            "precision": 0.8865323975180551,
+            "recall": 0.88,
+            "f1-score": 0.8794908488363337,
+            "support": 400.0
+        }
+    }
+}
