@@ -1,34 +1,10 @@
 import streamlit as st
-import cv2
-import av
-import urllib.request
 from pathlib import Path
-import threading
 import numpy as np
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title='Detección facial', page_icon='📷', layout='wide')
 st.title('Detección y clasificación facial')
-
-@st.cache_resource
-def cargar_detector():
-    ruta = Path('yunet.onnx')
-    if not ruta.exists():
-        urllib.request.urlretrieve('https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx', ruta)
-    return cv2.FaceDetectorYN.create(str(ruta), '', (320,320), 0.6, 0.3, 5000), threading.Lock()
-
-def procesar(frame):
-    img = frame.to_ndarray(format='bgr24')
-    detector, lock = cargar_detector()
-    h,w = img.shape[:2]
-    with lock:
-        detector.setInputSize((w,h))
-        _, rostros = detector.detect(img)
-    for f in ([] if rostros is None else rostros):
-        x,y,a,b = map(int,f[:4])
-        cv2.rectangle(img,(x,y),(x+a,y+b),(0,255,0),2)
-        cv2.putText(img,f'Rostro {f[-1]:.1%}',(max(0,x),max(20,y-8)),cv2.FONT_HERSHEY_SIMPLEX,.6,(0,255,0),2)
-    return av.VideoFrame.from_ndarray(img,format='bgr24')
 
 @st.cache_resource
 def cargar_modelo():
@@ -51,9 +27,8 @@ def prueba():
 
 camara, evaluacion = st.tabs(['Cámara en vivo','Evaluación FairFace'])
 with camara:
-    st.caption('YuNet: detección facial, sin clasificación de género en cámara.')
-    cargar_detector()
-    webrtc_streamer(key='camara',mode=WebRtcMode.SENDRECV,rtc_configuration={'iceServers':[{'urls':['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]},video_frame_callback=procesar,media_stream_constraints={'video':True,'audio':False},async_processing=True)
+    st.caption('Cámara procesada localmente en el navegador mediante MediaPipe. No utiliza WebRTC ni TURN.')
+    components.html(Path(__file__).with_name('camara.html').read_text(encoding='utf-8'), height=650)
 with evaluacion:
     st.caption('Predicciones de etiquetas del dataset, no determinación de identidad de género.')
     if st.button('Evaluar modelo'):
